@@ -13,7 +13,10 @@
     "clean": "rm -rf dist dist-electron release",
     "electron:compile": "tsc -p tsconfig.electron.json",
     "electron:dev": "npm run build && npm run electron:compile && electron .",
-    "electron:build": "npm run clean && npm run build && npm run electron:compile && electron-builder --mac --config electron-builder.config.json"
+    "electron:build": "npm run clean && npm run build && npm run electron:compile && electron-builder --mac --config electron-builder.config.json",
+    "electron:build:arm": "npm run clean && npm run build && npm run electron:compile && electron-builder --mac --arm64 --config electron-builder.config.json",
+    "electron:build:intel": "npm run clean && npm run build && npm run electron:compile && electron-builder --mac --x64 --config electron-builder.config.json",
+    "electron:build:all": "npm run clean && npm run build && npm run electron:compile && electron-builder --mac --universal --x64 --arm64 --config electron-builder.config.json"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
