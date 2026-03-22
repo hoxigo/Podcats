@@ -32,7 +32,7 @@
     "darkModeSupport": true,
     "hardenedRuntime": false,
     "gatekeeperAssess": false,
-    "icon": "build-resources/icon.png"
+    "icon": "build-resources/icon.icns"
   },
   "dmg": {
     "title": "Podcats",
