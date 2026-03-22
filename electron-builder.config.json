@@ -1,0 +1,58 @@
+{
+  "appId": "com.podcats.app",
+  "productName": "Podcats",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist-electron/**/*",
+    "node_modules/**/*",
+    "package.json"
+  ],
+  "extraResources": [
+    {
+      "from": "dist",
+      "to": "dist"
+    },
+    {
+      "from": "build-resources/icon.png",
+      "to": "icon.png"
+    }
+  ],
+  "mac": {
+    "category": "public.app-category.productivity",
+    "target": [
+      {
+        "target": "dmg",
+        "arch": [
+          "arm64"
+        ]
+      }
+    ],
+    "darkModeSupport": true,
+    "hardenedRuntime": false,
+    "gatekeeperAssess": false,
+    "icon": "build-resources/icon.png"
+  },
+  "dmg": {
+    "title": "Podcats",
+    "window": {
+      "width": 540,
+      "height": 380
+    },
+    "contents": [
+      {
+        "x": 150,
+        "y": 200,
+        "type": "file"
+      },
+      {
+        "x": 390,
+        "y": 200,
+        "type": "link",
+        "path": "/Applications"
+      }
+    ]
+  },
+  "asar": true
+}
