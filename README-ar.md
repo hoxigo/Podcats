@@ -55,6 +55,14 @@ npm run electron:build:win # بناء مثبت Windows (يحتاج ويندوز 
 
 ---
 
+## ⚠️ إصلاح تحذير Windows
+إذا ظهر تحذير SmartScreen: اضغط "More info" ثم "Run anyway" (التطبيق غير موقّع حاليًا).
+
+## ☕ الدعم
+إذا وجدت Podcats مفيدًا يمكنك دعم المشروع: [ko-fi.com/hoxigo](https://ko-fi.com/hoxigo)
+
+---
+
 ## 🎙️ كيف يعمل
 ```
 رفع PDF → Gemini 2.5 Flash يكتب النص الحواري

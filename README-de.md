@@ -58,6 +58,14 @@ npm run electron:build:win # Windows-Installer bauen (Windows oder wine)
 
 ---
 
+## ⚠️ Windows-Hinweis
+Zeigt SmartScreen eine Warnung, klicke auf „More info“ → „Run anyway“ (App ist derzeit unsigniert).
+
+## ☕ Support
+Wenn dir Podcats hilft, kannst du das Projekt hier unterstützen: [ko-fi.com/hoxigo](https://ko-fi.com/hoxigo)
+
+---
+
 ## 🎙️ Funktionsweise
 ```
 PDF hochladen → Gemini 2.5 Flash schreibt den Dialog

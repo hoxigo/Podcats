@@ -58,6 +58,14 @@ npm run electron:build:win # Windows 설치 파일 (Windows 또는 wine)
 
 ---
 
+## ⚠️ Windows 경고
+SmartScreen 경고가 뜨면 "More info" → "Run anyway" 클릭 (현재 미서명).
+
+## ☕ 후원
+유용했다면 여기에서 지원할 수 있습니다: [ko-fi.com/hoxigo](https://ko-fi.com/hoxigo)
+
+---
+
 ## 🎙️ 동작 방식
 ```
 PDF 업로드 → Gemini 2.5 Flash가 대본 작성

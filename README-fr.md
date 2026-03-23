@@ -55,6 +55,14 @@ npm run electron:build:win  # build Windows (Windows ou wine requis)
 
 ---
 
+## ⚠️ Avertissement Windows
+Si SmartScreen affiche un avertissement : cliquez « More info » puis « Run anyway » (l’app n’est pas signée).
+
+## ☕ Support
+Si l’app vous est utile, vous pouvez soutenir le projet : [ko-fi.com/hoxigo](https://ko-fi.com/hoxigo)
+
+---
+
 ## 🎙️ Fonctionnement
 ```
 Upload PDF → Gemini 2.5 Flash écrit le dialogue

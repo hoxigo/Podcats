@@ -83,6 +83,14 @@ npm run electron:build:win # build Windows installer (requires Windows runner or
 
 ---
 
+## ⚠️ First Launch Fix (Windows)
+If SmartScreen shows a warning: click **More info** → **Run anyway** (app is unsigned).
+
+## ☕ Support
+If you find Podcats useful, you can support the project: [ko-fi.com/hoxigo](https://ko-fi.com/hoxigo)
+
+---
+
 ## 🎙️ How It Works
 
 ```

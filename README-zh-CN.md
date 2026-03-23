@@ -58,6 +58,14 @@ npm run electron:build:win # 构建 Windows 安装包（需 Windows 或 wine）
 
 ---
 
+## ⚠️ Windows 警告
+如果 SmartScreen 警告：点击 “More info” → “Run anyway”（当前未签名）。
+
+## ☕ 支持
+如果觉得有用，可在此支持项目：[ko-fi.com/hoxigo](https://ko-fi.com/hoxigo)
+
+---
+
 ## 🎙️ 工作流程
 ```
 上传 PDF → Gemini 2.5 Flash 写出对话脚本
