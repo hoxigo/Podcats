@@ -7,6 +7,7 @@ import {
 import WaveSurfer from 'wavesurfer.js';
 import { getPlayableAudioUrl } from './lib/audio';
 import { generateScript, generateAudio, generatePreview, validateKey } from './lib/gemini';
+import { savePodcast, loadPodcasts, deletePodcast, updatePodcast, clearAllPodcasts, isSupabaseConfigured } from './lib/supabase';
 import logoBase64 from './logo';
 
 // ─── Voice / Language System ──────────────────────────────────────────────────
@@ -72,7 +73,7 @@ const LANGUAGES = [
 ];
 
 interface ApiConfig { key: string; }
-interface Podcast   { id: string; name: string; audioBase64: string; script: string; language: string; pdfBase64?: string; voice1?: string; voice2?: string; speaker1?: string; speaker2?: string; instructions?: string; wordCount?: number; }
+interface Podcast   { id: string; name: string; audioBase64: string; script: string; language: string; pdfBase64?: string; voice1?: string; voice2?: string; speaker1?: string; speaker2?: string; instructions?: string; wordCount?: number; audioUrl?: string; audioPath?: string; pdfPath?: string; }
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 function useTheme() {
@@ -358,7 +359,7 @@ function AudioPlayer({ podcast, onDelete, onUpdate, onError, t }: {
       container: ref.current,
       waveColor: t.waveColor, progressColor: t.waveProgress, cursorColor: t.primary,
       barWidth: 2, barGap: 2, barRadius: 3, height: 56,
-      url: getPlayableAudioUrl(podcast.audioBase64),
+      url: podcast.audioUrl || getPlayableAudioUrl(podcast.audioBase64),
     });
     ws.current.on('play',       () => setPlaying(true));
     ws.current.on('pause',      () => setPlaying(false));
@@ -366,7 +367,7 @@ function AudioPlayer({ podcast, onDelete, onUpdate, onError, t }: {
     ws.current.on('timeupdate', t  => setCurrent(t));
     ws.current.on('ready',      d  => setDuration(d));
     return () => { ws.current?.destroy(); };
-  }, [podcast.audioBase64, t.waveColor, t.waveProgress]);
+  }, [podcast.audioBase64, podcast.audioUrl, t.waveColor, t.waveProgress]);
 
   const fmt = (s: number) => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
 
@@ -392,7 +393,7 @@ function AudioPlayer({ podcast, onDelete, onUpdate, onError, t }: {
           {/* Download */}
           <button
             title="Download audio"
-            onClick={() => { const a=document.createElement('a'); a.href=getPlayableAudioUrl(podcast.audioBase64); a.download=`${podcast.name}.wav`; a.click(); }}
+            onClick={() => { const a=document.createElement('a'); a.href=podcast.audioUrl || getPlayableAudioUrl(podcast.audioBase64); a.download=`${podcast.name}.wav`; a.click(); }}
             style={{ padding:6, background:'none', border:'none', color: t.textMuted, cursor:'pointer', transition:'color .15s' }}
             onMouseEnter={e=>(e.currentTarget.style.color=t.primary)}
             onMouseLeave={e=>(e.currentTarget.style.color=t.textMuted)}>
@@ -631,6 +632,17 @@ export default function App() {
     }
   }, []);
 
+  // Load persisted podcasts from Supabase on mount
+  const [loadingPodcasts, setLoadingPodcasts] = useState(false);
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    setLoadingPodcasts(true);
+    loadPodcasts()
+      .then(loaded => { if (loaded.length) setPodcasts(loaded as Podcast[]); })
+      .catch(console.error)
+      .finally(() => setLoadingPodcasts(false));
+  }, []);
+
   const saveConfig = (c: ApiConfig) => {
     setApiConfig(c);
     localStorage.setItem('podcats_api_key', c.key);
@@ -707,7 +719,7 @@ export default function App() {
       );
       setProgress(100);
 
-      setPodcasts(prev => [{
+      const newPodcast: Podcast = {
         id: Date.now().toString(),
         name: file.name.replace('.pdf',''),
         audioBase64: audioB64,
@@ -720,7 +732,9 @@ export default function App() {
         speaker2: displayName2,
         instructions,
         wordCount,
-      }, ...prev]);
+      };
+      setPodcasts(prev => [newPodcast, ...prev]);
+      savePodcast(newPodcast as any).catch(console.error);
     } catch (err: any) {
       handleApiError(err.message, handleGenerate);
     } finally {
@@ -1099,7 +1113,7 @@ export default function App() {
                       ({podcasts.length})
                     </span>
                   </h2>
-                  <button onClick={()=>setPodcasts([])}
+                  <button onClick={()=>{ setPodcasts([]); clearAllPodcasts().catch(console.error); }}
                     style={{ fontSize:12,color:t.textFaint,background:'none',border:'none',cursor:'pointer' }}
                     onMouseEnter={e=>(e.currentTarget.style.color='#ef4444')}
                     onMouseLeave={e=>(e.currentTarget.style.color=t.textFaint)}>
@@ -1108,8 +1122,8 @@ export default function App() {
                 </div>
                 {podcasts.map(p => (
                   <AudioPlayer key={p.id} podcast={p} t={t}
-                    onDelete={()=>setPodcasts(prev=>prev.filter(x=>x.id!==p.id))}
-                    onUpdate={(updated)=>setPodcasts(prev=>prev.map(x=>x.id===updated.id?updated:x))}
+                    onDelete={()=>{ setPodcasts(prev=>prev.filter(x=>x.id!==p.id)); deletePodcast(p.id).catch(console.error); }}
+                    onUpdate={(updated)=>{ setPodcasts(prev=>prev.map(x=>x.id===updated.id?updated:x)); updatePodcast(updated as any).catch(console.error); }}
                     onError={handleApiError}/>
                 ))}
               </div>

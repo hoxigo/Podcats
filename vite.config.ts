@@ -8,7 +8,7 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, '.') },
   },
-  base: './',   // ← Critical: use relative paths for file:// protocol
+  base: '/',
   server: {
     port: 5173,
   },
