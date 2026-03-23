@@ -1030,6 +1030,17 @@ export default function App() {
                     hoxygo
                   </a>
                 </p>
+                <a href="https://ko-fi.com/hoxigo" target="_blank" rel="noreferrer"
+                   style={{ display:'inline-flex', justifyContent:'center', marginTop:8 }}>
+                  <img
+                    src="https://storage.ko-fi.com/cdn/kofi5.png"
+                    alt="Support on Ko-fi"
+                    style={{
+                      height:36, borderRadius:12, border:`1px solid ${t.border}`,
+                      boxShadow:`0 6px 18px ${t.primary}20`, objectFit:'contain'
+                    }}
+                  />
+                </a>
               </div>
             </div>
           </div>
