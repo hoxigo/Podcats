@@ -6,6 +6,7 @@
 
   <p>
     <img src="https://img.shields.io/badge/macOS-supported-purple?logo=apple" />
+    <img src="https://img.shields.io/badge/Windows-supported-blue?logo=windows" />
     <img src="https://img.shields.io/badge/Electron-36-blue?logo=electron" />
     <img src="https://img.shields.io/badge/Gemini-AI-orange?logo=google" />
     <img src="https://img.shields.io/badge/license-MIT-green" />
@@ -31,31 +32,21 @@
 
 ## 📥 Installation
 
-### Step 1 — Download
-Go to [Releases](../../releases/latest) and download:
-- `Podcats-1.0.0-arm64.dmg` → Apple Silicon (M1/M2/M3/M4)
-- `Podcats-1.0.0.dmg` → Intel Mac
+### Step 1 — Download (from [Releases](../../releases/latest))
+- **Windows (recommended):** `Podcats Setup 1.0.0.exe`
+- **macOS Apple Silicon:** `Podcats-1.0.0-arm64.dmg`
+- **macOS Intel:** `Podcats-1.0.0.dmg`
 
 ### Step 2 — Install
-Open the `.dmg` file and drag **Podcats** to your **Applications** folder.
+- **Windows:** run the setup EXE, then launch Podcats from the Start Menu.
+- **macOS:** open the DMG and drag **Podcats** to Applications.
 
-### Step 3 — First Launch Fix ⚠️
-
-Because Podcats is not signed with an Apple certificate, macOS will block it on first launch.
-
-**Fix — Option A (Terminal):**
+### Step 3 — First Launch Fix ⚠️ (macOS only)
+Gatekeeper may block the first launch. Run:
 ```bash
-xattr -cr /Applications/Podcats.app
+sudo xattr -cr /Applications/Podcats.app && open /Applications/Podcats.app
 ```
-Then open the app normally.
-
-**Fix — Option B (No Terminal):**
-1. Try to open Podcats → you'll see a "damaged" warning → click **Cancel**
-2. Go to **System Settings → Privacy & Security**
-3. Scroll down → you'll see **"Podcats was blocked"**
-4. Click **"Open Anyway"**
-
-> This is a one-time step. After that, the app opens normally every time.
+Or use **System Settings → Privacy & Security → “Open Anyway”**. This is one-time; future launches are normal.
 
 ---
 
@@ -74,7 +65,8 @@ git clone https://github.com/Hoxygo/Podcats.git
 cd Podcats
 npm install
 npm run electron:dev   # development
-npm run electron:build # build DMG
+npm run electron:build # build macOS DMG
+npm run electron:build:win # build Windows installer (requires Windows runner or wine)
 ```
 
 ---
