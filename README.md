@@ -45,7 +45,7 @@
 ## 📥 Installation
 
 ### Step 1 — Download (from [Releases](../../releases/latest))
-- **Windows (recommended):** `Podcats Setup 1.0.0.exe`
+- **Windows:** `Podcats Setup 1.0.0.exe`
 - **macOS Apple Silicon:** `Podcats-1.0.0-arm64.dmg`
 - **macOS Intel:** `Podcats-1.0.0.dmg`
 

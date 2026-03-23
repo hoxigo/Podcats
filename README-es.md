@@ -19,7 +19,7 @@ Convierte cualquier PDF en un pódcast de dos voces en minutos, con soporte mult
 ## 📥 Instalación
 
 ### Descarga (desde [Releases](../../releases/latest))
-- **Windows (recomendado):** `Podcats Setup 1.0.0.exe`
+- **Windows:** `Podcats Setup 1.0.0.exe`
 - **macOS Apple Silicon:** `Podcats-1.0.0-arm64.dmg`
 - **macOS Intel:** `Podcats-1.0.0.dmg`
 

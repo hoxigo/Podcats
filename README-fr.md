@@ -19,7 +19,7 @@ Transformez n’importe quel PDF en podcast à deux voix en quelques minutes, av
 ## 📥 Installation
 
 ### Téléchargement (depuis [Releases](../../releases/latest))
-- **Windows (recommandé) :** `Podcats Setup 1.0.0.exe`
+- **Windows :** `Podcats Setup 1.0.0.exe`
 - **macOS Apple Silicon :** `Podcats-1.0.0-arm64.dmg`
 - **macOS Intel :** `Podcats-1.0.0.dmg`
 

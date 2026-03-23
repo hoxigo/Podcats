@@ -22,7 +22,7 @@ Wandelt jedes PDF in wenigen Minuten in einen Zwei-Stimmen-Podcast um, mit Mehrs
 ## 📥 Installation
 
 ### Download (über [Releases](../../releases/latest))
-- **Windows (empfohlen):** `Podcats Setup 1.0.0.exe`
+- **Windows:** `Podcats Setup 1.0.0.exe`
 - **macOS Apple Silicon:** `Podcats-1.0.0-arm64.dmg`
 - **macOS Intel:** `Podcats-1.0.0.dmg`
 
