@@ -3,12 +3,14 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import { defineConfig } from 'vite';
 
+const isElectron = process.env.ELECTRON === 'true';
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: { '@': path.resolve(__dirname, '.') },
   },
-  base: '/',
+  base: isElectron ? './' : '/',
   server: {
     port: 5173,
   },

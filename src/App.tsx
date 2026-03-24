@@ -7,7 +7,7 @@ import {
 import WaveSurfer from 'wavesurfer.js';
 import { getPlayableAudioUrl } from './lib/audio';
 import { generateScript, generateAudio, generatePreview, validateKey } from './lib/gemini';
-import { savePodcast, loadPodcasts, deletePodcast, updatePodcast, clearAllPodcasts, isSupabaseConfigured } from './lib/supabase';
+import { savePodcast, loadPodcasts, deletePodcast, updatePodcast, clearAllPodcasts, isSupabaseConfigured, downloadPdfBase64 } from './lib/supabase';
 import logoBase64 from './logo';
 
 // ─── Voice / Language System ──────────────────────────────────────────────────
@@ -326,14 +326,23 @@ function AudioPlayer({ podcast, onDelete, onUpdate, onError, t }: {
   };
 
   const handleRegenFull = async () => {
-    if (!podcast.pdfBase64 || !podcast.voice1 || !podcast.voice2) {
+    if (!podcast.voice1 || !podcast.voice2) {
+      onError('Voice data not available. Please generate a fresh podcast first.');
+      return;
+    }
+    // Get PDF content — from memory or download from Supabase Storage
+    let pdfData = podcast.pdfBase64;
+    if (!pdfData && podcast.pdfPath) {
+      try { pdfData = await downloadPdfBase64(podcast.pdfPath); } catch {}
+    }
+    if (!pdfData) {
       onError('Original PDF data not available. Please generate a fresh podcast first.');
       return;
     }
     setRegenFullBusy(true);
     try {
       const newScript = await generateScript(
-        podcast.pdfBase64!, podcast.instructions ?? '',
+        pdfData, podcast.instructions ?? '',
         podcast.speaker1!, podcast.speaker2!,
         podcast.language, podcast.wordCount ?? 700
       );

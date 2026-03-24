@@ -218,3 +218,11 @@ export async function downloadAudioBase64(audioPath: string): Promise<string> {
   const buf = await data.arrayBuffer();
   return bytesToBase64(new Uint8Array(buf));
 }
+
+export async function downloadPdfBase64(pdfPath: string): Promise<string> {
+  if (!supabase) return '';
+  const { data, error } = await supabase.storage.from(BUCKET).download(pdfPath);
+  if (error || !data) throw new Error('Failed to download PDF');
+  const buf = await data.arrayBuffer();
+  return bytesToBase64(new Uint8Array(buf));
+}
