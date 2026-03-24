@@ -40,7 +40,7 @@ sudo xattr -cr /Applications/Podcats.app && open /Applications/Podcats.app
 ---
 
 ## 🔑 API 키 설정
-1. [ai.google.dev](https://ai.google.dev) 에서 무료 Gemini 키 발급
+1. [[ai.google.dev]](https://aistudio.google.com/api-keys) 에서 무료 Gemini 키 발급
 2. 앱에서 **Set API Key** 클릭
 3. 키 붙여넣기 — 로컬에만 저장
 
