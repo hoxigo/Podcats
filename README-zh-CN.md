@@ -40,7 +40,7 @@ sudo xattr -cr /Applications/Podcats.app && open /Applications/Podcats.app
 ---
 
 ## 🔑 API 密钥
-1. 在 [[ai.google.dev]](https://aistudio.google.com/api-keys) 获取免费的 Gemini Key
+1. 在 [aistudio.google.com/api-keys](https://aistudio.google.com/api-keys) 获取免费的 Gemini Key
 2. 在应用中点击 **Set API Key**
 3. 粘贴密钥——只保存在本地
 

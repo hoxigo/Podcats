@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, nativeImage } from 'electron';
+import { app, BrowserWindow, shell, nativeImage, ipcMain } from 'electron';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 import path from 'path';
@@ -61,8 +61,36 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
+function ensureDataDir() {
+  const dir = path.join(app.getPath('userData'), 'podcats');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function wireIpc() {
+  ipcMain.handle('podcats:save', async (_event, data: any) => {
+    const dir = ensureDataDir();
+    const target = path.join(dir, 'podcasts.json');
+    await fs.promises.writeFile(target, JSON.stringify(data ?? [], null, 2), 'utf8');
+    return { path: target };
+  });
+
+  ipcMain.handle('podcats:load', async () => {
+    const dir = ensureDataDir();
+    const target = path.join(dir, 'podcasts.json');
+    if (!fs.existsSync(target)) return [];
+    try {
+      const raw = await fs.promises.readFile(target, 'utf8');
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  });
+}
+
 app.whenReady().then(() => {
   setDockIcon();
+  wireIpc();
   createWindow();
 });
 

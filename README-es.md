@@ -37,7 +37,7 @@ O ve a **System Settings → Privacy & Security → “Open Anyway”** (solo la
 ---
 
 ## 🔑 Clave API
-1. Consigue una clave gratuita de Gemini en [[ai.google.dev]](https://aistudio.google.com/api-keys)
+1. Consigue una clave gratuita de Gemini en [aistudio.google.com/api-keys](https://aistudio.google.com/api-keys)
 2. En la app, pulsa **Set API Key**
 3. Pega la clave — se guarda localmente
 

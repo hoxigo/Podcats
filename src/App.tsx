@@ -2,15 +2,17 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Upload, Play, Pause, Download, Trash2, FileText,
   CheckCircle2, Loader2, Globe, Key,
-  Eye, EyeOff, ChevronDown, X, Sparkles, Info, Moon, Sun
+  Eye, EyeOff, ChevronDown, X, Sparkles, Info, Moon, Sun, Subtitles
 } from 'lucide-react';
 import WaveSurfer from 'wavesurfer.js';
 import { getPlayableAudioUrl } from './lib/audio';
 import { generateScript, generateAudio, generatePreview, validateKey } from './lib/gemini';
 import logoBase64 from './logo';
+import { savePodcasts, loadPodcasts, savePrefs, loadPrefs } from './lib/db';
+import type { Podcast, ApiConfig, Voice } from './lib/types';
+import './lib/electron.d.ts';
 
 // ─── Voice / Language System ──────────────────────────────────────────────────
-type Voice = 'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Zephyr';
 const VOICES: Voice[] = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
 
 // Each voice slot maps to a gender
@@ -70,9 +72,6 @@ const LANGUAGES = [
   { value: 'Russian',         label: '🇷🇺 Russian'           },
   { value: 'Chinese',         label: '🇨🇳 Chinese'           },
 ];
-
-interface ApiConfig { key: string; }
-interface Podcast   { id: string; name: string; audioBase64: string; script: string; language: string; pdfBase64?: string; voice1?: string; voice2?: string; speaker1?: string; speaker2?: string; instructions?: string; wordCount?: number; }
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 function useTheme() {
@@ -272,9 +271,9 @@ function ApiKeyModal({ config, onSave, onClose, t }: {
             </button>
           </div>
 
-          <a href="https://ai.google.dev" target="_blank" rel="noreferrer"
+          <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noreferrer"
              style={{ display:'block', textAlign:'center', fontSize:12, color: t.primary, textDecoration:'none' }}>
-            Get a free Gemini API key at ai.google.dev →
+            Get a free Gemini API key at aistudio.google.com/api-keys →
           </a>
         </div>
       </div>
@@ -301,9 +300,83 @@ function AudioPlayer({ podcast, onDelete, onUpdate, onError, t }: {
   const [editedScript,    setEditedScript]    = useState(podcast.script);
   const [regenAudioBusy,  setRegenAudioBusy]  = useState(false);
   const [regenFullBusy,   setRegenFullBusy]   = useState(false);
+  const [showCaptions,    setShowCaptions]    = useState(false); // inline highlight mode
+  const [cues,            setCues]            = useState<Array<{ text:string; start:number; end:number }>>([]);
+  const [activeCueIdx,    setActiveCueIdx]    = useState(0);
+  const scriptContainerRef = useRef<HTMLDivElement | null>(null);
+  const sentenceRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const progressRef = useRef<HTMLDivElement | null>(null);
+  const draggingProgress = useRef(false);
 
   const wordCount = editedScript.trim().split(/\s+/).filter(Boolean).length;
   const charCount = editedScript.length;
+
+  const buildCues = useCallback((text: string, total: number) => {
+    if (!text.trim() || total <= 0) return [];
+    const sentences = text
+      .replace(/\s+/g, ' ')
+      .split(/(?<=[\\.\\!\\?؟!،؛])\s+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+    const fallbackByWords = () => {
+      const wordsPerSentence = sentences.map(s => s.split(/\s+/).filter(Boolean).length || 1);
+      const totalWords = wordsPerSentence.reduce((a,b)=>a+b,0) || 1;
+      let cursor = 0;
+      return sentences.map((s, i) => {
+        const slice = total * (wordsPerSentence[i] / totalWords);
+        const start = cursor;
+        const end = i === sentences.length - 1 ? total : Math.min(total, cursor + slice);
+        cursor = end;
+        return { text: s, start, end };
+      });
+    };
+
+    // محاولة استخدام الصمت الحقيقي من موجة الصوت إن وجد
+    try {
+      const buffer: AudioBuffer | null = (ws.current as any)?.backend?.buffer ?? null;
+      if (!buffer || sentences.length < 2) return fallbackByWords();
+
+      const channel = buffer.getChannelData(0);
+      const sr = buffer.sampleRate;
+      const win = Math.max(1, Math.floor(sr * 0.08)); // نافذة 80ms
+      const threshold = 0.015;
+      const silences: number[] = [];
+      for (let i = 0; i < channel.length; i += win) {
+        let sum = 0;
+        for (let j = 0; j < win && i + j < channel.length; j++) {
+          const s = channel[i + j];
+          sum += s * s;
+        }
+        const rms = Math.sqrt(sum / win);
+        if (rms < threshold) silences.push((i / sr));
+      }
+
+      if (!silences.length) return fallbackByWords();
+
+      const idealSpacing = total / sentences.length;
+      const starts: number[] = [0];
+      for (let i = 1; i < sentences.length; i++) {
+        const ideal = idealSpacing * i;
+        let nearest = silences[0];
+        let minDiff = Math.abs(nearest - ideal);
+        for (const t of silences) {
+          const d = Math.abs(t - ideal);
+          if (d < minDiff) { minDiff = d; nearest = t; }
+        }
+        const safe = Math.max(starts[starts.length - 1] + 0.05, Math.min(nearest, total));
+        starts.push(safe);
+      }
+      starts.push(total);
+
+      return sentences.map((s, i) => ({
+        text: s,
+        start: starts[i],
+        end: starts[i + 1] ?? total
+      }));
+    } catch {
+      return fallbackByWords();
+    }
+  }, []);
 
   const handleRegenAudio = async () => {
     if (!podcast.voice1 || !podcast.voice2) return;
@@ -359,16 +432,65 @@ function AudioPlayer({ podcast, onDelete, onUpdate, onError, t }: {
       waveColor: t.waveColor, progressColor: t.waveProgress, cursorColor: t.primary,
       barWidth: 2, barGap: 2, barRadius: 3, height: 56,
       url: getPlayableAudioUrl(podcast.audioBase64),
+      audioRate: 0.9, // أبطأ قليلاً ليبدو طبيعياً
     });
+    ws.current.setPlaybackRate(0.9);
     ws.current.on('play',       () => setPlaying(true));
     ws.current.on('pause',      () => setPlaying(false));
     ws.current.on('finish',     () => setPlaying(false));
     ws.current.on('timeupdate', t  => setCurrent(t));
-    ws.current.on('ready',      d  => setDuration(d));
+    ws.current.on('ready',      () => setDuration(ws.current?.getDuration() ?? 0));
     return () => { ws.current?.destroy(); };
   }, [podcast.audioBase64, t.waveColor, t.waveProgress]);
 
   const fmt = (s: number) => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+  const progressRatio = duration ? Math.min(1, Math.max(0, current / duration)) : 0;
+  const seekToCue = (idx: number) => {
+    if (!ws.current || !duration || idx < 0 || idx >= cues.length) return;
+    ws.current.seekTo(cues[idx].start / duration);
+  };
+  const handleSeekStart = (clientX: number) => {
+    const rect = progressRef.current?.getBoundingClientRect();
+    if (!rect || !ws.current) return;
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    ws.current.seekTo(ratio);
+  };
+  useEffect(() => {
+    const move = (e: MouseEvent) => { if (draggingProgress.current) handleSeekStart(e.clientX); };
+    const up = () => { draggingProgress.current = false; };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+  }, []);
+  // Auto-scroll to active cue when captions mode is on
+  useEffect(() => {
+    if (!showCaptions) return;
+    const el = sentenceRefs.current[activeCueIdx];
+    const container = scriptContainerRef.current;
+    if (el && container) {
+      const rect = el.getBoundingClientRect();
+      const crect = container.getBoundingClientRect();
+      if (rect.top < crect.top || rect.bottom > crect.bottom) {
+        el.scrollIntoView({ behavior:'smooth', block:'center' });
+      }
+    }
+  }, [activeCueIdx, showCaptions]);
+
+  // Rebuild cues whenever script or duration changes
+  useEffect(() => {
+    if (!duration) return;
+    setCues(buildCues(editedScript || podcast.script, duration));
+  }, [duration, editedScript, podcast.script, buildCues]);
+
+  // Track active cue by current time
+  useEffect(() => {
+    if (!cues.length) return;
+    const idx = cues.findIndex(c => current >= c.start && current < c.end);
+    setActiveCueIdx(idx >= 0 ? idx : cues.length - 1);
+  }, [current, cues]);
 
   return (
     <div style={{ background: t.card, border:`1px solid ${hovered ? t.primary+'50' : t.border}`,
@@ -436,12 +558,30 @@ function AudioPlayer({ podcast, onDelete, onUpdate, onError, t }: {
           onMouseUp={e=>(e.currentTarget.style.transform='scale(1)')}>
           {playing ? <Pause size={14}/> : <Play size={14} style={{marginLeft:2}}/>}
         </button>
-        <div style={{ flex:1, height:4, borderRadius:99, background: t.purplePale,
-                      cursor:'pointer', position:'relative', overflow:'hidden' }}
-             onClick={e => { const r=e.currentTarget.getBoundingClientRect(); ws.current?.seekTo((e.clientX-r.left)/r.width); }}>
-          <div style={{ position:'absolute', inset:0, borderRadius:99, transition:'width .1s',
-                        background:`linear-gradient(90deg,${t.secondary},${t.primary})`,
-                        width: duration ? `${(current/duration)*100}%` : '0%' }}/>
+        <div
+          ref={progressRef}
+          style={{
+            flex:1, height:10, borderRadius:999,
+            background: t.purplePale,
+            cursor:'pointer', position:'relative', overflow:'visible'
+          }}
+          onMouseDown={e => { draggingProgress.current=true; handleSeekStart(e.clientX); }}
+          onClick={e => handleSeekStart(e.clientX)}
+        >
+          <div style={{
+            position:'absolute', inset:0, borderRadius:999,
+            background:`linear-gradient(90deg,${t.secondary},${t.primary})`,
+            width: `${progressRatio*100}%`
+          }}/>
+          <div style={{
+            position:'absolute',
+            top:'50%', width:16, height:16, borderRadius:'50%',
+            background:`linear-gradient(135deg,${t.secondary},${t.primary})`,
+            border:`2px solid ${t.secondary}`,
+            left: `${progressRatio*100}%`,
+            transform:'translate(-50%, -50%)',
+            boxShadow:`0 3px 8px ${t.primary}35`
+          }}/>
         </div>
         <span style={{ fontSize:11, color: t.textMuted, fontFamily:'monospace', flexShrink:0 }}>
           {fmt(current)}/{fmt(duration)}
@@ -456,6 +596,18 @@ function AudioPlayer({ podcast, onDelete, onUpdate, onError, t }: {
               Script
             </span>
             <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <button
+                onClick={() => { setShowCaptions(v=>!v); setEditMode(false); setShowScript(true); }}
+                style={{
+                  display:'flex', alignItems:'center', gap:4,
+                  padding:'4px 10px', borderRadius:7, fontSize:11, fontWeight:600, cursor:'pointer',
+                  background: showCaptions ? t.purplePale : 'transparent',
+                  border:`1px solid ${showCaptions ? t.primary : t.border}`,
+                  color: showCaptions ? t.primary : t.textMuted, transition:'all .15s',
+                }}>
+                <Subtitles size={12}/>
+                Captions
+              </button>
               {editMode && (
                 <span style={{ fontSize:11, color: t.textFaint, fontVariantNumeric:'tabular-nums' }}>
                   {wordCount} words · {charCount} chars
@@ -491,14 +643,36 @@ function AudioPlayer({ podcast, onDelete, onUpdate, onError, t }: {
               }}
             />
           ) : (
-            <div style={{
-              background: t.bg, borderRadius:10, padding:12,
-              border:`1px solid ${t.border}`, maxHeight:200, overflowY:'auto',
-              transition:'background .2s',
-            }}>
-              <p style={{ margin:0, fontSize:12, color: t.textMid, lineHeight:1.75, whiteSpace:'pre-line' }}>
-                {editedScript}
-              </p>
+            <div
+              ref={scriptContainerRef}
+              style={{
+                background: t.bg, borderRadius:10, padding:12,
+                border:`1px solid ${t.border}`, maxHeight:240, overflowY:'auto',
+                transition:'background .2s', lineHeight:1.8
+              }}>
+              {cues.length
+                ? cues.map((c, i) => (
+                    <span
+                      key={i}
+                      ref={el => sentenceRefs.current[i] = el}
+                      onClick={() => seekToCue(i)}
+                      style={{
+                        display:'block',
+                        marginBottom:6,
+                        background: showCaptions && i===activeCueIdx ? `${t.primary}18` : 'transparent',
+                        color: showCaptions && i===activeCueIdx ? t.primary : t.textMid,
+                        padding:'4px 6px',
+                        borderRadius:8,
+                        cursor: showCaptions ? 'pointer' : 'default'
+                      }}>
+                      {c.text}
+                    </span>
+                  ))
+                : (
+                  <p style={{ margin:0, fontSize:12, color: t.textMid, whiteSpace:'pre-line' }}>
+                    {editedScript}
+                  </p>
+                )}
             </div>
           )}
 
@@ -523,6 +697,7 @@ function AudioPlayer({ podcast, onDelete, onUpdate, onError, t }: {
           )}
         </div>
       )}
+
     </div>
   );
 }
@@ -558,7 +733,7 @@ function QuotaErrorModal({ onClose, onRetry, t }: {
                       textTransform:'uppercase', letterSpacing:1 }}>Your Options</p>
           {[
             '⏰  Wait until tomorrow and try again',
-            '🚀  Upgrade to a paid plan at ai.google.dev',
+            '🚀  Upgrade to a paid plan at aistudio.google.com/api-keys',
             '🔑  Use a different API key',
           ].map((opt, i) => (
             <p key={i} style={{ margin: i===0 ? 0 : '6px 0 0', fontSize:13, color: t.textMid }}>
@@ -584,11 +759,11 @@ function QuotaErrorModal({ onClose, onRetry, t }: {
               Try Again
             </button>
           </div>
-          <a href="https://ai.google.dev" target="_blank" rel="noreferrer"
+          <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noreferrer"
              style={{ display:'block', textAlign:'center', padding:'11px', borderRadius:12,
                       background: t.purplePale, border:`1px solid ${t.primary}40`,
                       color: t.primary, fontSize:13, fontWeight:600, textDecoration:'none' }}>
-            🚀 Get API Key at ai.google.dev
+            🚀 Get API Key at aistudio.google.com/api-keys
           </a>
         </div>
       </div>
@@ -615,11 +790,38 @@ export default function App() {
   const [step,           setStep]           = useState('');
   const [progress,       setProgress]       = useState(0);
   const [podcasts,       setPodcasts]       = useState<Podcast[]>([]);
+  const [loadingPodcasts,setLoadingPodcasts]= useState(true);
   const [previewAudio,   setPreviewAudio]   = useState<HTMLAudioElement | null>(null);
   const [playingVoice,   setPlayingVoice]   = useState<Voice | null>(null);
   const [loadingVoice,   setLoadingVoice]   = useState<Voice | null>(null);
 
   useEffect(() => () => { previewAudio?.pause(); }, [previewAudio]);
+
+  // Load persisted podcasts & preferences on boot
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        // Prefer filesystem persistence (Electron), fallback to IndexedDB
+        const fsPodcasts = await window.electronAPI?.loadPodcasts?.();
+        const storedPodcasts = Array.isArray(fsPodcasts) ? fsPodcasts : await loadPodcasts();
+        const storedPrefs = await loadPrefs();
+        if (cancelled) return;
+        if (storedPodcasts?.length) setPodcasts(storedPodcasts);
+        if (storedPrefs) {
+          setLanguage(storedPrefs.language ?? 'English US');
+          setSelectedVoices(
+            storedPrefs.selectedVoices?.length ? storedPrefs.selectedVoices : ['Puck', 'Kore']
+          );
+          setInstructions(storedPrefs.instructions ?? '');
+          setWordCount(storedPrefs.wordCount ?? 700);
+        }
+      } finally {
+        if (!cancelled) setLoadingPodcasts(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     // Try new simple key storage first, fallback to old format
@@ -636,6 +838,18 @@ export default function App() {
     localStorage.setItem('podcats_api_key', c.key);
     setShowKeyModal(false);
   };
+
+  // Persist podcasts & preferences whenever they change
+  useEffect(() => {
+    if (loadingPodcasts) return;
+    savePodcasts(podcasts);
+    window.electronAPI?.savePodcasts?.(podcasts);
+  }, [podcasts, loadingPodcasts]);
+
+  useEffect(() => {
+    if (loadingPodcasts) return;
+    savePrefs({ language, selectedVoices, instructions, wordCount });
+  }, [language, selectedVoices, instructions, wordCount, loadingPodcasts]);
 
   // Shows quota modal for 429, otherwise throws for normal handling
   const handleApiError = (message: string, retryFn?: () => void) => {
