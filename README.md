@@ -64,7 +64,7 @@ Or use **System Settings → Privacy & Security → “Open Anyway”**. This is
 
 ## 🔑 API Key Setup
 
-1. Get a **free** Gemini API key at [ai.google.dev](https://ai.google.dev)
+1. Get a **free** Gemini API key at [ai.google.dev](aistudio.google.com/api-keys)
 2. Open Podcats and click **"Set API Key"** in the top right
 3. Paste your key — it's saved locally on your device and never leaves it
 
