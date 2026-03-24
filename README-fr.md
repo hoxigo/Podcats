@@ -37,7 +37,7 @@ Ou passez par **System Settings → Privacy & Security → “Open Anyway”** (
 ---
 
 ## 🔑 Clé API
-1. Obtenez une clé gratuite Gemini sur [ai.google.dev](https://ai.google.dev)
+1. Obtenez une clé gratuite Gemini sur [[ai.google.dev]](https://aistudio.google.com/api-keys)
 2. Dans l’app, cliquez **Set API Key**
 3. Collez la clé — elle reste locale
 
