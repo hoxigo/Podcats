@@ -1,7 +1,7 @@
 {
   "name": "podcats",
   "productName": "Podcats",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "private": true,
   "type": "module",
   "description": "The purr-fect AI podcast generator",
