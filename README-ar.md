@@ -37,7 +37,7 @@ sudo xattr -cr /Applications/Podcats.app && open /Applications/Podcats.app
 ---
 
 ## 🔑 إعداد مفتاح الـ API
-1. احصل على مفتاح Gemini مجاني من [ai.google.dev](https://ai.google.dev)
+1. احصل على مفتاح Gemini مجاني من [[ai.google.dev]](https://aistudio.google.com/api-keys)
 2. افتح التطبيق واضغط **Set API Key**
 3. الصق المفتاح — يُحفظ محليًا ولا يغادر جهازك
 
