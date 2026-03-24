@@ -3,7 +3,12 @@
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
+let cachedKey: string | null = null;
+
+export function setApiKey(key: string): void { cachedKey = key; }
+
 function getKey(): string {
+  if (cachedKey) return cachedKey;
   const key = localStorage.getItem('podcats_api_key');
   if (!key) throw new Error('NO_API_KEY');
   return key;
@@ -11,9 +16,12 @@ function getKey(): string {
 
 async function callGemini(endpoint: string, body: object): Promise<any> {
   const key = getKey();
-  const res = await fetch(`${GEMINI_API_BASE}${endpoint}?key=${key}`, {
+  const res = await fetch(`${GEMINI_API_BASE}${endpoint}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': key,
+    },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -133,7 +141,9 @@ export async function generatePreview(voice: string): Promise<string> {
 // ── Validate key ──────────────────────────────────────────────────────────────
 export async function validateKey(key: string): Promise<boolean> {
   try {
-    const res = await fetch(`${GEMINI_API_BASE}/models?key=${key}&pageSize=1`);
+    const res = await fetch(`${GEMINI_API_BASE}/models?pageSize=1`, {
+      headers: { 'x-goog-api-key': key },
+    });
     return res.ok;
   } catch { return false; }
 }

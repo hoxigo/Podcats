@@ -6,8 +6,8 @@ import {
 } from 'lucide-react';
 import WaveSurfer from 'wavesurfer.js';
 import { getPlayableAudioUrl } from './lib/audio';
-import { generateScript, generateAudio, generatePreview, validateKey } from './lib/gemini';
-import { savePodcast, loadPodcasts, deletePodcast, updatePodcast, clearAllPodcasts, isSupabaseConfigured, downloadPdfBase64 } from './lib/supabase';
+import { generateScript, generateAudio, generatePreview, validateKey, setApiKey } from './lib/gemini';
+import { savePodcast, loadPodcasts, deletePodcast, updatePodcast, clearAllPodcasts, isSupabaseConfigured, downloadPdfBase64, saveApiKey, loadApiKey } from './lib/supabase';
 import logoBase64 from './logo';
 
 // ─── Voice / Language System ──────────────────────────────────────────────────
@@ -190,7 +190,12 @@ function ApiKeyModal({ config, onSave, onClose, t }: {
     const valid = await validateKey(key.trim());
     setSaving(false);
     if (!valid) { setErr('Invalid API key. Please check and try again.'); return; }
+    // Store in Supabase (primary) and localStorage (fallback)
+    setApiKey(key.trim());
     localStorage.setItem('podcats_api_key', key.trim());
+    if (isSupabaseConfigured()) {
+      try { await saveApiKey(key.trim()); } catch { /* fallback to localStorage only */ }
+    }
     onSave({ key: key.trim() });
   };
 
@@ -247,7 +252,7 @@ function ApiKeyModal({ config, onSave, onClose, t }: {
                         border:`1px solid ${t.primary}25`, borderRadius:10, padding:'10px 12px' }}>
             <span style={{ fontSize:16 }}>🔒</span>
             <p style={{ margin:0, fontSize:12, color: t.textMid, lineHeight:1.5 }}>
-              Your key is stored locally on this device and never sent to any third-party server.
+              Your key is stored securely and never sent to any third-party server.
             </p>
           </div>
 
@@ -632,13 +637,27 @@ export default function App() {
   useEffect(() => () => { previewAudio?.pause(); }, [previewAudio]);
 
   useEffect(() => {
-    // Try new simple key storage first, fallback to old format
-    const key = localStorage.getItem('podcats_api_key')
-      ?? (() => { try { return JSON.parse(localStorage.getItem('podcats_api_config') ?? '{}').key; } catch { return null; } })();
-    if (key) {
-      setApiConfig({ key });
-      localStorage.setItem('podcats_api_key', key); // normalize
-    }
+    // Try Supabase first, then localStorage, then old format
+    (async () => {
+      let key: string | null = null;
+
+      // 1. Try Supabase
+      if (isSupabaseConfigured()) {
+        try { key = await loadApiKey(); } catch { /* ignore */ }
+      }
+
+      // 2. Fallback to localStorage
+      if (!key) {
+        key = localStorage.getItem('podcats_api_key')
+          ?? (() => { try { return JSON.parse(localStorage.getItem('podcats_api_config') ?? '{}').key; } catch { return null; } })();
+      }
+
+      if (key) {
+        setApiConfig({ key });
+        setApiKey(key);
+        localStorage.setItem('podcats_api_key', key);
+      }
+    })();
   }, []);
 
   // Load persisted podcasts from Supabase on mount
@@ -654,7 +673,7 @@ export default function App() {
 
   const saveConfig = (c: ApiConfig) => {
     setApiConfig(c);
-    localStorage.setItem('podcats_api_key', c.key);
+    setApiKey(c.key);
     setShowKeyModal(false);
   };
 

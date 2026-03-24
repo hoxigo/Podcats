@@ -87,6 +87,29 @@ export interface PodcastWithUrls {
   pdfPath?: string;    // storage path
 }
 
+// ── API Key ─────────────────────────────────────────────────────────────────
+export async function saveApiKey(apiKey: string): Promise<void> {
+  if (!supabase) return;
+  const sessionId = getSessionId();
+  const { error } = await supabase.from('api_keys').upsert(
+    { session_id: sessionId, gemini_key: apiKey },
+    { onConflict: 'session_id' }
+  );
+  if (error) throw new Error(`Save API key failed: ${error.message}`);
+}
+
+export async function loadApiKey(): Promise<string | null> {
+  if (!supabase) return null;
+  const sessionId = getSessionId();
+  const { data, error } = await supabase
+    .from('api_keys')
+    .select('gemini_key')
+    .eq('session_id', sessionId)
+    .single();
+  if (error || !data) return null;
+  return data.gemini_key;
+}
+
 // ── CRUD ─────────────────────────────────────────────────────────────────────
 export async function savePodcast(podcast: PodcastWithUrls): Promise<void> {
   if (!supabase) return;
