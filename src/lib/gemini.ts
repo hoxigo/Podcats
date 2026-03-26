@@ -1,26 +1,168 @@
-// Direct Gemini API calls — no Express server needed
-// All calls go directly from the app to Google's API
+// Direct Gemini API calls — no Express server needed.
+// We isolate localStorage access in helpers so we can migrate to keytar later.
 
-const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+const DEFAULT_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+const LEGACY_KEY_STORAGE = 'podcats_api_key';
+const LEGACY_CONFIG_STORAGE = 'podcats_api_config';
+const BASE_URL_STORAGE = 'gemini_base_url';
+const MULTI_KEYS_STORAGE = 'gemini_api_keys';
+const ACTIVE_KEY_STORAGE = 'gemini_active_key_id';
 
-function getKey(): string {
-  const key = localStorage.getItem('podcats_api_key');
-  if (!key) throw new Error('NO_API_KEY');
-  return key;
+type ApiErrorCode = 'NO_API_KEY' | 'INVALID_KEY' | 'RATE_LIMIT' | 'NETWORK_ERROR' | 'API_ERROR';
+
+export type ApiKeyEntry = {
+  id: string;
+  key: string;
+  label?: string;
+};
+
+export class GeminiApiError extends Error {
+  public readonly code: ApiErrorCode;
+  public readonly status?: number;
+
+  constructor(code: ApiErrorCode, message: string, status?: number) {
+    super(`${code}: ${message}`);
+    this.name = 'GeminiApiError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+function safeJsonParse<T>(value: string | null, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+export function normalizeApiKey(raw: string): string {
+  return raw.trim().replace(/^["']|["']$/g, '');
+}
+
+function normalizeBaseUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, '');
+  return trimmed || DEFAULT_BASE;
+}
+
+function readLegacyKey(): string | null {
+  const direct = normalizeApiKey(localStorage.getItem(LEGACY_KEY_STORAGE) ?? '');
+  if (direct) return direct;
+  const legacyCfg = safeJsonParse<{ key?: string }>(localStorage.getItem(LEGACY_CONFIG_STORAGE), {});
+  const fallback = normalizeApiKey(legacyCfg.key ?? '');
+  return fallback || null;
+}
+
+function readKeyEntries(): ApiKeyEntry[] {
+  const raw = safeJsonParse<ApiKeyEntry[]>(localStorage.getItem(MULTI_KEYS_STORAGE), []);
+  return raw
+    .map((entry) => ({
+      id: (entry.id || '').trim(),
+      key: normalizeApiKey(entry.key || ''),
+      label: entry.label?.trim() || undefined
+    }))
+    .filter((entry) => entry.id && entry.key);
+}
+
+function writeKeyEntries(entries: ApiKeyEntry[]) {
+  localStorage.setItem(MULTI_KEYS_STORAGE, JSON.stringify(entries));
+}
+
+export function getBaseUrl(): string {
+  const stored = localStorage.getItem(BASE_URL_STORAGE);
+  const candidate = normalizeBaseUrl(stored ?? DEFAULT_BASE);
+  try {
+    // Validate URL shape and fallback if user wrote an invalid base url.
+    new URL(candidate);
+    return candidate;
+  } catch {
+    return DEFAULT_BASE;
+  }
+}
+
+export function setBaseUrl(raw: string): string {
+  const next = normalizeBaseUrl(raw);
+  localStorage.setItem(BASE_URL_STORAGE, next);
+  return next;
+}
+
+export function setPrimaryApiKey(rawKey: string, label = 'Primary'): string {
+  const normalized = normalizeApiKey(rawKey);
+  if (!normalized) {
+    throw new GeminiApiError('NO_API_KEY', 'API key is required.');
+  }
+
+  const entries = readKeyEntries();
+  const existing = entries.find((entry) => entry.key === normalized);
+  const active: ApiKeyEntry = existing ?? {
+    id: `key_${Date.now()}`,
+    key: normalized,
+    label
+  };
+  if (!existing) entries.unshift(active);
+
+  writeKeyEntries(entries);
+  localStorage.setItem(ACTIVE_KEY_STORAGE, active.id);
+  // Keep backwards compatibility with existing UI/state reads.
+  localStorage.setItem(LEGACY_KEY_STORAGE, normalized);
+  return normalized;
+}
+
+export function getActiveKey(): string {
+  const entries = readKeyEntries();
+  const activeId = localStorage.getItem(ACTIVE_KEY_STORAGE);
+  const active = entries.find((entry) => entry.id === activeId) ?? entries[0];
+  if (active?.key) return active.key;
+
+  const legacy = readLegacyKey();
+  if (legacy) {
+    setPrimaryApiKey(legacy, 'Legacy');
+    return legacy;
+  }
+
+  throw new GeminiApiError('NO_API_KEY', 'Set your Gemini API key in settings first.');
+}
+
+function extractErrorMessage(payload: any, fallback: string): string {
+  return payload?.error?.message || payload?.message || fallback;
+}
+
+function isInvalidKeyError(status: number, message: string): boolean {
+  if (status === 401 || status === 403) return true;
+  if (status !== 400) return false;
+  return /(api key|invalid key|authentication|permission|unauthorized|api_key_invalid)/i.test(message);
 }
 
 async function callGemini(endpoint: string, body: object): Promise<any> {
-  const key = getKey();
-  const res = await fetch(`${GEMINI_API_BASE}${endpoint}?key=${key}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: { message: res.statusText } }));
-    const msg = err?.error?.message ?? res.statusText;
-    throw new Error(res.status === 429 ? '429: ' + msg : msg);
+  const baseUrl = getBaseUrl();
+  const apiKey = getActiveKey();
+  const url = `${baseUrl}${endpoint}?key=${encodeURIComponent(apiKey)}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new GeminiApiError('NETWORK_ERROR', 'Unable to reach Gemini API. Check your connection.');
   }
+
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({ error: { message: res.statusText } }));
+    const message = extractErrorMessage(payload, res.statusText);
+
+    if (res.status === 429) {
+      throw new GeminiApiError('RATE_LIMIT', message || 'Rate limit reached. Try again later.', 429);
+    }
+    if (isInvalidKeyError(res.status, message)) {
+      throw new GeminiApiError('INVALID_KEY', message || 'Invalid Gemini API key.', res.status);
+    }
+    throw new GeminiApiError('API_ERROR', message || 'Gemini API request failed.', res.status);
+  }
+
   return res.json();
 }
 
@@ -131,9 +273,32 @@ export async function generatePreview(voice: string): Promise<string> {
 }
 
 // ── Validate key ──────────────────────────────────────────────────────────────
-export async function validateKey(key: string): Promise<boolean> {
+export async function validateKey(
+  key: string,
+  baseUrlOverride?: string
+): Promise<{ success: boolean; error?: string }> {
+  const normalized = normalizeApiKey(key);
+  if (!normalized) return { success: false, error: 'NO_API_KEY' };
+
+  const candidateBase = normalizeBaseUrl(baseUrlOverride ?? getBaseUrl());
+  let baseUrl = DEFAULT_BASE;
   try {
-    const res = await fetch(`${GEMINI_API_BASE}/models?key=${key}&pageSize=1`);
-    return res.ok;
-  } catch { return false; }
+    new URL(candidateBase);
+    baseUrl = candidateBase;
+  } catch {
+    baseUrl = DEFAULT_BASE;
+  }
+  try {
+    const res = await fetch(`${baseUrl}/models?key=${encodeURIComponent(normalized)}&pageSize=1`);
+    if (res.ok) return { success: true };
+
+    const payload = await res.json().catch(() => ({ error: { message: res.statusText } }));
+    const message = extractErrorMessage(payload, res.statusText);
+
+    if (res.status === 429) return { success: false, error: 'RATE_LIMIT' };
+    if (isInvalidKeyError(res.status, message)) return { success: false, error: 'INVALID_KEY' };
+    return { success: false, error: message || 'API_ERROR' };
+  } catch {
+    return { success: false, error: 'NETWORK_ERROR' };
+  }
 }

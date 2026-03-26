@@ -6,7 +6,16 @@ import {
 } from 'lucide-react';
 import WaveSurfer from 'wavesurfer.js';
 import { getPlayableAudioUrl } from './lib/audio';
-import { generateScript, generateAudio, generatePreview, validateKey } from './lib/gemini';
+import {
+  generateScript,
+  generateAudio,
+  generatePreview,
+  getBaseUrl,
+  normalizeApiKey,
+  setBaseUrl,
+  setPrimaryApiKey,
+  validateKey
+} from './lib/gemini';
 import logoBase64 from './logo';
 import { savePodcasts, loadPodcasts, savePrefs, loadPrefs } from './lib/db';
 import type { Podcast, ApiConfig, Voice } from './lib/types';
@@ -177,20 +186,140 @@ function ApiKeyModal({ config, onSave, onClose, t }: {
   onClose: () => void;
   t: ReturnType<typeof makeTheme>;
 }) {
-  const [key,    setKey]    = useState(config?.key ?? '');
-  const [show,   setShow]   = useState(false);
+  const initialKey = config?.key ?? '';
+  const initialBaseUrl = getBaseUrl();
+  const normalizedInitialKey = normalizeApiKey(initialKey);
+
+  const [key, setKey] = useState(initialKey);
+  const [show, setShow] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [err,    setErr]    = useState('');
+  const [testing, setTesting] = useState(false);
+  const [useCustomKey, setUseCustomKey] = useState(() => localStorage.getItem('podcats_use_custom_key') !== '0');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [baseUrlInput, setBaseUrlInput] = useState(initialBaseUrl);
+  const [keyStatus, setKeyStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>(
+    normalizedInitialKey ? 'valid' : 'idle'
+  );
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+  const normalizedKey = normalizeApiKey(key);
+
+  const mapValidateError = (error?: string) => {
+    const map: Record<string, string> = {
+      NO_API_KEY: 'API key is required.',
+      INVALID_KEY: 'Invalid API key. Please check and try again.',
+      RATE_LIMIT: 'Rate limit reached while validating key. Please try again in a moment.',
+      NETWORK_ERROR: 'Network error while validating key. Please check your connection.',
+    };
+    return map[error ?? ''] ?? `Could not validate API key (${error ?? 'Unknown error'}).`;
+  };
+
+  const runValidation = async (showSuccessMessage: boolean) => {
+    if (!useCustomKey) {
+      setKeyStatus('idle');
+      setFeedback({
+        type: 'info',
+        text: 'Default shared key mode is reserved for a future release. Keep "Use custom API key" enabled for now.'
+      });
+      return false;
+    }
+    if (!normalizedKey) {
+      setKeyStatus('invalid');
+      setFeedback({ type: 'error', text: 'Please enter your Gemini API key.' });
+      return false;
+    }
+
+    setKeyStatus('testing');
+    const result = await validateKey(normalizedKey, baseUrlInput);
+    if (!result.success) {
+      setKeyStatus('invalid');
+      setFeedback({ type: 'error', text: mapValidateError(result.error) });
+      return false;
+    }
+
+    setKeyStatus('valid');
+    if (showSuccessMessage) {
+      setFeedback({ type: 'success', text: 'API key is valid.' });
+    } else {
+      setFeedback(null);
+    }
+    return true;
+  };
+
+  const testApiKey = async () => {
+    setTesting(true);
+    await runValidation(true);
+    setTesting(false);
+  };
 
   const save = async () => {
-    if (!key.trim()) return;
     setSaving(true);
-    const valid = await validateKey(key.trim());
-    setSaving(false);
-    if (!valid) { setErr('Invalid API key. Please check and try again.'); return; }
-    localStorage.setItem('podcats_api_key', key.trim());
-    onSave({ key: key.trim() });
+    const valid = keyStatus === 'valid' ? true : await runValidation(false);
+    if (!valid) {
+      setSaving(false);
+      return;
+    }
+
+    try {
+      setBaseUrl(baseUrlInput);
+      const savedKey = setPrimaryApiKey(normalizedKey);
+      localStorage.setItem('podcats_use_custom_key', useCustomKey ? '1' : '0');
+      setFeedback({ type: 'success', text: 'Key saved successfully.' });
+      window.setTimeout(() => onSave({ key: savedKey }), 450);
+    } catch {
+      setFeedback({ type: 'error', text: 'Could not save API key. Please try again.' });
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const onKeyChange = (value: string) => {
+    const next = normalizeApiKey(value);
+    setKey(value);
+    setFeedback(null);
+    if (!next) {
+      setKeyStatus('idle');
+      return;
+    }
+    if (next === normalizedInitialKey && baseUrlInput === initialBaseUrl) {
+      setKeyStatus('valid');
+      return;
+    }
+    setKeyStatus('idle');
+  };
+
+  const onBaseChange = (value: string) => {
+    setBaseUrlInput(value);
+    setFeedback(null);
+    if (normalizeApiKey(key)) {
+      if (normalizeApiKey(key) === normalizedInitialKey && value === initialBaseUrl) {
+        setKeyStatus('valid');
+      } else {
+        setKeyStatus('idle');
+      }
+    } else {
+      setKeyStatus('idle');
+    }
+  };
+
+  const onToggleCustomKey = () => {
+    const next = !useCustomKey;
+    setUseCustomKey(next);
+    setFeedback(null);
+    localStorage.setItem('podcats_use_custom_key', next ? '1' : '0');
+    if (!next) {
+      setKeyStatus('idle');
+      return;
+    }
+    if (normalizedKey && normalizedKey === normalizedInitialKey && baseUrlInput === initialBaseUrl) {
+      setKeyStatus('valid');
+    } else if (normalizedKey) {
+      setKeyStatus('idle');
+    }
+  };
+
+  const canTest = useCustomKey && !!normalizedKey && !testing && !saving;
+  const canSave = useCustomKey && keyStatus === 'valid' && !saving && !testing;
 
   return (
     <div style={{ position:'fixed', inset:0, zIndex:50, display:'flex', alignItems:'center',
@@ -218,26 +347,105 @@ function ApiKeyModal({ config, onSave, onClose, t }: {
         </div>
 
         <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:16 }}>
+          {/* Toggle */}
+          <label style={{ display:'flex', alignItems:'center', gap:10, color: t.text, fontSize:13, fontWeight:600 }}>
+            <input
+              type="checkbox"
+              checked={useCustomKey}
+              onChange={onToggleCustomKey}
+              style={{ width:16, height:16, accentColor: t.primary, cursor:'pointer' }}
+            />
+            Use custom API key
+          </label>
+
+          {!useCustomKey && (
+            <p style={{ margin:0, fontSize:12, color: t.textMuted }}>
+              Shared default key mode will be available later. Keep this enabled for now.
+            </p>
+          )}
+
           {/* Key input */}
           <div>
             <label style={{ fontSize:11, fontWeight:700, color: t.textMid, textTransform:'uppercase',
                             letterSpacing:1, display:'block', marginBottom:8 }}>API Key</label>
             <div style={{ position:'relative' }}>
               <input type={show?'text':'password'} value={key}
-                onChange={e => setKey(e.target.value)} onKeyDown={e => e.key==='Enter' && save()}
+                disabled={!useCustomKey}
+                onChange={e => onKeyChange(e.target.value)}
+                onKeyDown={async e => {
+                  if (e.key !== 'Enter') return;
+                  e.preventDefault();
+                  if (canSave) {
+                    await save();
+                  } else if (canTest) {
+                    await testApiKey();
+                  }
+                }}
                 placeholder="AIza..." spellCheck={false} autoFocus
                 style={{ width:'100%', border:`1px solid ${t.border}`, borderRadius:12,
                          padding:'11px 40px 11px 14px', color: t.text, fontSize:13,
                          fontFamily:'monospace', outline:'none', background: t.bg,
-                         boxSizing:'border-box', transition:'border-color .15s' }}
+                         boxSizing:'border-box', transition:'border-color .15s',
+                         opacity: useCustomKey ? 1 : 0.5 }}
                 onFocus={e => (e.target.style.borderColor = t.borderFocus)}
                 onBlur={e  => (e.target.style.borderColor = t.border)}/>
               <button onClick={() => setShow(!show)}
+                disabled={!useCustomKey}
                 style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)',
-                         background:'none', border:'none', color: t.textMuted, cursor:'pointer' }}>
+                         background:'none', border:'none', color: t.textMuted,
+                         cursor: useCustomKey ? 'pointer' : 'not-allowed', opacity: useCustomKey ? 1 : 0.5 }}>
                 {show ? <EyeOff size={15}/> : <Eye size={15}/>}
               </button>
             </div>
+          </div>
+
+          {/* Advanced settings */}
+          <div style={{ border:`1px dashed ${t.border}`, borderRadius:12, padding:'10px 12px', background: t.bg }}>
+            <button
+              onClick={() => setShowAdvanced(s => !s)}
+              style={{
+                width:'100%',
+                background:'none',
+                border:'none',
+                padding:0,
+                display:'flex',
+                alignItems:'center',
+                justifyContent:'space-between',
+                fontSize:12,
+                fontWeight:700,
+                color:t.textMid,
+                cursor:'pointer'
+              }}
+            >
+              <span>Advanced (optional)</span>
+              <span style={{ transform: showAdvanced ? 'rotate(180deg)' : 'none', transition:'transform .15s ease' }}>
+                <ChevronDown size={14}/>
+              </span>
+            </button>
+            {showAdvanced && (
+              <div style={{ marginTop:10 }}>
+                <label style={{ fontSize:11, fontWeight:700, color: t.textMid, display:'block', marginBottom:6 }}>
+                  Base URL
+                </label>
+                <input
+                  type="text"
+                  value={baseUrlInput}
+                  onChange={e => onBaseChange(e.target.value)}
+                  placeholder="https://generativelanguage.googleapis.com/v1beta"
+                  spellCheck={false}
+                  style={{
+                    width:'100%',
+                    border:`1px solid ${t.border}`,
+                    borderRadius:10,
+                    padding:'9px 10px',
+                    color:t.text,
+                    fontSize:12,
+                    background:t.card,
+                    boxSizing:'border-box'
+                  }}
+                />
+              </div>
+            )}
           </div>
 
           {/* Info note */}
@@ -245,29 +453,53 @@ function ApiKeyModal({ config, onSave, onClose, t }: {
                         border:`1px solid ${t.primary}25`, borderRadius:10, padding:'10px 12px' }}>
             <span style={{ fontSize:16 }}>🔒</span>
             <p style={{ margin:0, fontSize:12, color: t.textMid, lineHeight:1.5 }}>
-              Your key is stored locally on this device and never sent to any third-party server.
+              Your key is stored locally on this device. Never sent to any server except Google Gemini API.
             </p>
           </div>
 
           {/* Buttons */}
-          {err && (
-            <p style={{ margin:0, fontSize:12, color:'#ef4444', background:'rgba(239,68,68,0.08)',
-                        border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px' }}>
-              {err}
+          {feedback && (
+            <p style={{
+              margin:0, fontSize:12, borderRadius:8, padding:'8px 12px',
+              color: feedback.type === 'error' ? '#ef4444' : feedback.type === 'success' ? '#059669' : t.textMid,
+              background: feedback.type === 'error'
+                ? 'rgba(239,68,68,0.08)'
+                : feedback.type === 'success'
+                ? 'rgba(5,150,105,0.1)'
+                : `${t.primary}12`,
+              border: feedback.type === 'error'
+                ? '1px solid rgba(239,68,68,0.2)'
+                : feedback.type === 'success'
+                ? '1px solid rgba(5,150,105,0.24)'
+                : `1px solid ${t.primary}33`
+            }}>
+              {feedback.type === 'success' ? '✅ ' : feedback.type === 'error' ? '❌ ' : 'ℹ️ '}
+              {feedback.text}
             </p>
           )}
-          <div style={{ display:'flex', gap:8 }}>
+
+          <div style={{ display:'grid', gap:8, gridTemplateColumns:'1fr 1.2fr 1.2fr' }}>
             <button onClick={onClose}
-              style={{ flex:1, padding:'10px', borderRadius:12, background:'transparent',
+              style={{ padding:'10px', borderRadius:12, background:'transparent',
                        border:`1px solid ${t.border}`, color: t.textMid, fontSize:13, cursor:'pointer' }}>
               Cancel
             </button>
-            <button onClick={save} disabled={!key.trim() || saving}
-              style={{ flex:2, padding:'10px', borderRadius:12, fontWeight:700, fontSize:13,
-                       background: key.trim() ? `linear-gradient(135deg,${t.secondary},${t.primary})` : t.border,
-                       border:'none', color: key.trim() ? '#fff' : t.textFaint,
-                       cursor: key.trim() ? 'pointer':'not-allowed' }}>
-              {saving ? 'Validating...' : 'Save Key'}
+            <button onClick={testApiKey} disabled={!canTest}
+              style={{
+                padding:'10px', borderRadius:12, fontWeight:700, fontSize:13,
+                background: canTest ? `${t.primary}12` : t.border,
+                border:`1px solid ${canTest ? `${t.primary}66` : t.border}`,
+                color: canTest ? t.primary : t.textFaint,
+                cursor: canTest ? 'pointer' : 'not-allowed'
+              }}>
+              {testing || keyStatus === 'testing' ? 'Testing...' : 'Test API Key'}
+            </button>
+            <button onClick={save} disabled={!canSave}
+              style={{ padding:'10px', borderRadius:12, fontWeight:700, fontSize:13,
+                       background: canSave ? `linear-gradient(135deg,${t.secondary},${t.primary})` : t.border,
+                       border:'none', color: canSave ? '#fff' : t.textFaint,
+                       cursor: canSave ? 'pointer' : 'not-allowed' }}>
+              {saving ? 'Saving...' : 'Save Key'}
             </button>
           </div>
 
@@ -828,14 +1060,18 @@ export default function App() {
     const key = localStorage.getItem('podcats_api_key')
       ?? (() => { try { return JSON.parse(localStorage.getItem('podcats_api_config') ?? '{}').key; } catch { return null; } })();
     if (key) {
-      setApiConfig({ key });
-      localStorage.setItem('podcats_api_key', key); // normalize
+      const normalized = normalizeApiKey(key);
+      if (normalized) {
+        setApiConfig({ key: normalized });
+        setPrimaryApiKey(normalized, 'Legacy');
+      }
     }
   }, []);
 
   const saveConfig = (c: ApiConfig) => {
-    setApiConfig(c);
-    localStorage.setItem('podcats_api_key', c.key);
+    const normalized = normalizeApiKey(c.key);
+    const savedKey = setPrimaryApiKey(normalized, 'Primary');
+    setApiConfig({ key: savedKey });
     setShowKeyModal(false);
   };
 
